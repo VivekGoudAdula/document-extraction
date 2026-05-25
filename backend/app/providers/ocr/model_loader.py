@@ -1,35 +1,46 @@
 """
-OCR model warmup — loads PaddleOCR and TrOCR once at application startup.
+OCR model warmup — optional at startup (disabled on Render/low-memory hosts).
 
-SECURITY: Models are downloaded from HuggingFace/Paddle hubs only during initial
-setup (from_pretrained / PaddleOCR init). All inference runs locally on the server.
-Uploaded images are never sent to external OCR APIs.
+SECURITY: Models download once locally; inference stays on-server.
 """
 
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+from app.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 _warmup_complete = False
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr-warmup")
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr-warmup")
 
 
 def _warmup_sync() -> None:
-    from app.providers.ocr.paddle_provider import _get_paddle_ocr
-    from app.providers.ocr.trocr_provider import _get_trocr_models
+    settings = get_settings()
+    if settings.paddle_enabled:
+        from app.providers.ocr.paddle_provider import _get_paddle_ocr
 
-    logger.info("Warming up local PaddleOCR model...")
-    _get_paddle_ocr()
-    logger.info("Warming up local TrOCR model (microsoft/trocr-base-handwritten)...")
-    _get_trocr_models()
-    logger.info("Local OCR models ready (execution_mode=local).")
+        logger.info("Warming up local PaddleOCR...")
+        _get_paddle_ocr()
+    if settings.trocr_enabled:
+        from app.providers.ocr.trocr_provider import _get_trocr_models
+
+        logger.info("Warming up local TrOCR...")
+        _get_trocr_models()
+    logger.info("Local OCR warmup complete (execution_mode=local).")
 
 
 async def warmup_ocr_models() -> None:
-    """Load OCR models once at startup; safe to call multiple times."""
+    """Load OCR models at startup only when enabled (off by default on Render)."""
     global _warmup_complete
+    settings = get_settings()
+    if not settings.should_warmup_ocr_on_startup:
+        logger.info(
+            "Skipping OCR startup warmup (low_memory=%s). Models load on first /extract.",
+            settings.is_low_memory_deploy,
+        )
+        return
     if _warmup_complete:
         return
 

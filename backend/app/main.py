@@ -29,11 +29,14 @@ async def lifespan(_: FastAPI):
     )
 
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    await mongodb_provider.connect()
 
-    logger.info(
-        "Loading local OCR models (PaddleOCR + TrOCR) — images stay on-server..."
-    )
+    mongo_ok = await mongodb_provider.connect()
+    if not mongo_ok:
+        logger.warning(
+            "Starting without MongoDB — configure MONGO_URI (MongoDB Atlas) on Render. "
+            "/extract will fail until the database is reachable."
+        )
+
     try:
         await warmup_ocr_models()
     except Exception as exc:
@@ -42,11 +45,18 @@ async def lifespan(_: FastAPI):
             exc,
         )
 
+    ocr_engines = []
+    if settings.paddle_enabled:
+        ocr_engines.append("paddleocr")
+    if settings.trocr_enabled:
+        ocr_engines.append("trocr")
+
     logger.info(
-        "Secure extraction API ready | OCR: local only | LLM: %s @ %s | MongoDB: %s",
+        "API ready | OCR: %s (low_memory=%s) | LLM: %s @ %s",
+        "+".join(ocr_engines) or "none",
+        settings.is_low_memory_deploy,
         settings.chat_model,
         llm_host,
-        settings.mongo_uri.split("@")[-1] if "@" in settings.mongo_uri else settings.mongo_uri,
     )
     yield
     await mongodb_provider.disconnect()
@@ -96,10 +106,23 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health_check():
+        settings = get_settings()
+        mongo_status = "connected" if mongodb_provider.is_connected else "disconnected"
+        ocr_engines = []
+        if settings.paddle_enabled:
+            ocr_engines.append("paddleocr")
+        if settings.trocr_enabled:
+            ocr_engines.append("trocr")
         return {
-            "status": "ok",
-            "pipeline": "opencv-paddleocr-trocr-gpt4o",
+            "status": "ok" if mongo_status == "connected" else "degraded",
+            "pipeline": "opencv-" + "-".join(ocr_engines or ["none"]) + "-gpt4o",
             "ocr_execution_mode": "local",
+            "ocr_engines": ocr_engines,
+            "low_memory_mode": settings.is_low_memory_deploy,
+            "mongodb": mongo_status,
+            "mongodb_error": mongodb_provider.last_error
+            if mongo_status == "disconnected"
+            else None,
         }
 
     app.include_router(api_router)

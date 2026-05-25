@@ -75,9 +75,16 @@ app/services/        — preprocessing, fusion, extraction, ocr_pipeline
 
 1. **Root Directory:** `backend`
 2. **Python version:** `3.11.11` (set in Dashboard → Environment → `PYTHON_VERSION`, or use `runtime.txt` in this folder)
-3. **Build:** `pip install --upgrade pip && pip install -r requirements.txt`
-4. **Start:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-5. Add env vars from `.env.example` (OpenAI, MongoDB, `CORS_ORIGINS` = your Vercel URL)
+3. **Build (512MB Render):** `pip install --upgrade pip && pip install -r requirements-render.txt`
+4. **Build (local / GPU server):** `pip install -r requirements.txt`
+5. **Start:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+6. **Required env vars on Render:**
+   - `MONGO_URI` — **MongoDB Atlas** connection string (`mongodb+srv://...`). `localhost` will not work on Render.
+   - `OPENAI_API_KEY` — OpenAI or Azure key
+   - `CORS_ORIGINS` — your Vercel frontend URL (e.g. `https://your-app.vercel.app`)
+
+7. In Atlas: Network Access → allow `0.0.0.0/0` (or Render outbound IPs) so Render can connect.
+8. **Memory:** Free Render (512MB) cannot load TrOCR + Paddle server models. Use `requirements-render.txt` + `OCR_LOW_MEMORY=true` (Paddle mobile only). Upgrade to **Starter 2GB+** for full Paddle+TrOCR.
 
 Do **not** use Python 3.14 — PaddlePaddle has no wheels for it.
 

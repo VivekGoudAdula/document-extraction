@@ -1,0 +1,15 @@
+# Render / low-memory hosts (512MB–1GB). PaddleOCR only — no PyTorch/TrOCR.
+# Python 3.11 — see runtime.txt
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+aiofiles>=24.1.0
+Pillow>=11.0.0
+opencv-python-headless>=4.10.0
+openai>=1.55.0
+motor>=3.6.0
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.1
+pymongo>=4.9.0
+paddleocr>=2.7.0,<3.6.0
+paddlepaddle>=2.6.2,<3.2.0

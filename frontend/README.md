@@ -23,7 +23,15 @@ copy .env.example .env.local
 
 Set `NEXT_PUBLIC_API_URL` to your FastAPI server (default `http://localhost:8000`).
 
-Ensure the backend has CORS enabled for your frontend origin (default `*`).
+## Vercel environment variables
+
+| Variable | Value |
+|----------|--------|
+| `NEXT_PUBLIC_API_URL` | Your **Render backend URL** (e.g. `https://document-extraction-api.onrender.com`) |
+
+Set for **Production** (and Preview if you use preview deploys). Redeploy after changing.
+
+On **Render**, set `FRONTEND_URL` to this Vercel URL so the API accepts browser requests.
 
 ## Run
 

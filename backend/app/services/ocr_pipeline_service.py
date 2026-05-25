@@ -1,14 +1,15 @@
 """
 Hybrid local OCR pipeline — parallel PaddleOCR + TrOCR with cross-provider fallback.
 
-SECURITY: All OCR inference runs on this server. Images are preprocessed with
-OpenCV locally, then passed to local models. No external OCR HTTP calls.
+SECURITY: All OCR inference runs on this server. No external OCR HTTP calls.
+On Render (512MB), use OCR_LOW_MEMORY=true: PaddleOCR only, lazy model load.
 """
 
 import asyncio
 import logging
 from pathlib import Path
 
+from app.config import get_settings
 from app.models.ocr_models import OCRResult
 from app.providers.ocr.paddle_provider import paddle_provider
 from app.providers.ocr.trocr_provider import trocr_provider
@@ -32,13 +33,14 @@ def _empty_result(provider: str, error: str) -> OCRResult:
     }
 
 
+def _disabled_result(provider: str) -> OCRResult:
+    return _empty_result(provider, f"{provider} disabled for this deployment profile")
+
+
 def _apply_cross_fallback(
     paddle_result: OCRResult,
     trocr_result: OCRResult,
 ) -> tuple[OCRResult, OCRResult]:
-    """
-    If one local engine fails, rely on the other (no cloud OCR).
-    """
     paddle_ok = paddle_result.get("success", False)
     trocr_ok = trocr_result.get("success", False)
 
@@ -71,24 +73,45 @@ class OCRPipelineService:
         *,
         preprocessed_path: Path | None = None,
     ) -> tuple[OCRResult, OCRResult]:
+        settings = get_settings()
         ocr_path = preprocessed_path or file_path
 
-        results = await asyncio.gather(
-            paddle_provider.extract_text(ocr_path),
-            trocr_provider.extract_text(ocr_path),
-            return_exceptions=True,
-        )
+        tasks: list = []
+        labels: list[str] = []
+
+        if settings.paddle_enabled:
+            tasks.append(paddle_provider.extract_text(ocr_path))
+            labels.append("paddle")
+        if settings.trocr_enabled:
+            tasks.append(trocr_provider.extract_text(ocr_path))
+            labels.append("trocr")
 
         paddle_result = (
-            results[0]
-            if isinstance(results[0], dict)
-            else _empty_result("paddleocr", str(results[0]))
+            _disabled_result("paddleocr")
+            if "paddle" not in labels
+            else _empty_result("paddleocr", "not run")
         )
         trocr_result = (
-            results[1]
-            if isinstance(results[1], dict)
-            else _empty_result("trocr", str(results[1]))
+            _disabled_result("trocr")
+            if "trocr" not in labels
+            else _empty_result("trocr", "not run")
         )
+
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for label, result in zip(labels, results):
+                parsed = (
+                    result
+                    if isinstance(result, dict)
+                    else _empty_result(
+                        "paddleocr" if label == "paddle" else "trocr",
+                        str(result),
+                    )
+                )
+                if label == "paddle":
+                    paddle_result = parsed
+                else:
+                    trocr_result = parsed
 
         paddle_ok = paddle_result.get("success", False)
         trocr_ok = trocr_result.get("success", False)
@@ -97,21 +120,22 @@ class OCRPipelineService:
             logger.info("Retrying failed OCR on original image: %s", file_path.name)
             retry_tasks = []
             retry_labels: list[str] = []
-            if not paddle_ok:
+            if not paddle_ok and settings.paddle_enabled:
                 retry_tasks.append(paddle_provider.extract_text(file_path))
                 retry_labels.append("paddle")
-            if not trocr_ok:
+            if not trocr_ok and settings.trocr_enabled:
                 retry_tasks.append(trocr_provider.extract_text(file_path))
                 retry_labels.append("trocr")
 
-            retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
-            for label, retry in zip(retry_labels, retry_results):
-                if not isinstance(retry, dict):
-                    continue
-                if label == "paddle" and retry.get("success"):
-                    paddle_result = retry
-                elif label == "trocr" and retry.get("success"):
-                    trocr_result = retry
+            if retry_tasks:
+                retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
+                for label, retry in zip(retry_labels, retry_results):
+                    if not isinstance(retry, dict):
+                        continue
+                    if label == "paddle" and retry.get("success"):
+                        paddle_result = retry
+                    elif label == "trocr" and retry.get("success"):
+                        trocr_result = retry
 
         return _apply_cross_fallback(paddle_result, trocr_result)
 

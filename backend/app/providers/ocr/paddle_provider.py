@@ -24,17 +24,37 @@ _paddle_ocr = None
 def _get_paddle_ocr():
     global _paddle_ocr
     if _paddle_ocr is None:
+        from app.config import get_settings
+
+        settings = get_settings()
         os.environ.setdefault("FLAGS_use_mkldnn", "0")
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         from paddleocr import PaddleOCR
 
-        try:
-            _paddle_ocr = PaddleOCR(
-                lang="en",
-                use_textline_orientation=True,
-            )
-        except TypeError:
-            _paddle_ocr = PaddleOCR(lang="en")
+        if settings.is_low_memory_deploy:
+            # Mobile OCR only — skips heavy doc-orientation / unwarp models (~512MB hosts).
+            logger.info("Initializing PaddleOCR (low-memory / mobile profile)")
+            try:
+                _paddle_ocr = PaddleOCR(
+                    lang="en",
+                    ocr_version="PP-OCRv4",
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
+                )
+            except TypeError:
+                try:
+                    _paddle_ocr = PaddleOCR(lang="en", ocr_version="PP-OCRv4")
+                except TypeError:
+                    _paddle_ocr = PaddleOCR(lang="en")
+        else:
+            try:
+                _paddle_ocr = PaddleOCR(
+                    lang="en",
+                    use_textline_orientation=True,
+                )
+            except TypeError:
+                _paddle_ocr = PaddleOCR(lang="en")
     return _paddle_ocr
 
 

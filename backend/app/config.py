@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -28,7 +29,41 @@ class Settings(BaseSettings):
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db_name: str = "document_extraction"
     mongo_collection_name: str = "extractions"
+    # Comma-separated allowed browser origins, or "*" for dev.
     cors_origins: str = "*"
+    # Optional: your Vercel URL (same value you set on Vercel). Merged into CORS allowlist.
+    frontend_url: str | None = None
+
+    # OCR — set OCR_LOW_MEMORY=true on Render (512MB). Disables TrOCR + startup warmup.
+    ocr_low_memory: bool = False
+    ocr_warmup_on_startup: bool = False
+    ocr_enable_paddle: bool = True
+    ocr_enable_trocr: bool = True
+
+    @property
+    def is_low_memory_deploy(self) -> bool:
+        if self.ocr_low_memory:
+            return True
+        return os.getenv("RENDER", "").lower() in ("true", "1", "yes")
+
+    @property
+    def paddle_enabled(self) -> bool:
+        return self.ocr_enable_paddle
+
+    @property
+    def trocr_enabled(self) -> bool:
+        if not self.ocr_enable_trocr:
+            return False
+        if self.is_low_memory_deploy:
+            # TrOCR + PyTorch exceed Render 512MB unless explicitly enabled.
+            return os.getenv("OCR_ENABLE_TROCR", "").lower() in ("true", "1", "yes")
+        return True
+
+    @property
+    def should_warmup_ocr_on_startup(self) -> bool:
+        if self.is_low_memory_deploy:
+            return False
+        return self.ocr_warmup_on_startup
 
     @property
     def use_azure_openai(self) -> bool:
@@ -51,8 +86,27 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         if self.cors_origins.strip() == "*":
-            return ["*"]
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+            combined: list[str] = []
+            if self.frontend_url and self.frontend_url.strip():
+                combined.append(self.frontend_url.strip().rstrip("/"))
+            return combined or ["*"]
+
+        origins: list[str] = []
+        if self.frontend_url and self.frontend_url.strip():
+            origins.append(self.frontend_url.strip().rstrip("/"))
+        origins.extend(
+            origin.strip().rstrip("/")
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        )
+        # Preserve order, drop duplicates
+        seen: set[str] = set()
+        unique: list[str] = []
+        for origin in origins:
+            if origin not in seen:
+                seen.add(origin)
+                unique.append(origin)
+        return unique
 
 
 @lru_cache
