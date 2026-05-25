@@ -32,21 +32,16 @@ def _get_paddle_ocr():
         from paddleocr import PaddleOCR
 
         if settings.is_low_memory_deploy:
-            # Mobile OCR only — skips heavy doc-orientation / unwarp models (~512MB hosts).
-            logger.info("Initializing PaddleOCR (low-memory / mobile profile)")
+            # PaddleOCR 2.x on Render: minimal flags, CPU only, no extra classifiers.
+            logger.info("Initializing PaddleOCR 2.x (low-memory profile)")
             try:
                 _paddle_ocr = PaddleOCR(
                     lang="en",
-                    ocr_version="PP-OCRv4",
-                    use_doc_orientation_classify=False,
-                    use_doc_unwarping=False,
-                    use_textline_orientation=False,
+                    use_angle_cls=False,
+                    show_log=False,
                 )
             except TypeError:
-                try:
-                    _paddle_ocr = PaddleOCR(lang="en", ocr_version="PP-OCRv4")
-                except TypeError:
-                    _paddle_ocr = PaddleOCR(lang="en")
+                _paddle_ocr = PaddleOCR(lang="en")
         else:
             try:
                 _paddle_ocr = PaddleOCR(

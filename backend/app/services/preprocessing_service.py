@@ -22,9 +22,13 @@ class PreprocessingService:
         OpenCV pipeline: grayscale, denoise, contrast, adaptive threshold,
         sharpen, resize for OCR.
         """
+        from app.config import get_settings
+
         source = Path(image_path)
         if source.suffix.lower() not in IMAGE_EXTENSIONS:
             raise ValueError(f"Not an image file: {source}")
+
+        low_memory = get_settings().is_low_memory_deploy
 
         PREPROCESSED_DIR.mkdir(parents=True, exist_ok=True)
         output_path = PREPROCESSED_DIR / f"{source.stem}_{uuid.uuid4().hex}_enhanced.png"
@@ -34,25 +38,29 @@ class PreprocessingService:
             raise ValueError(f"Unable to read image: {source}")
 
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        denoised = cv2.fastNlMeansDenoising(gray, h=10)
 
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        contrast = clahe.apply(denoised)
-
-        adaptive = cv2.adaptiveThreshold(
-            contrast,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            31,
-            8,
-        )
-
-        sharpen_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-        sharpened = cv2.filter2D(adaptive, -1, sharpen_kernel)
+        if low_memory:
+            # Lighter pipeline for 512MB hosts (skip heavy denoise/threshold).
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            sharpened = clahe.apply(gray)
+            max_dim = 1600
+        else:
+            denoised = cv2.fastNlMeansDenoising(gray, h=10)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            contrast = clahe.apply(denoised)
+            adaptive = cv2.adaptiveThreshold(
+                contrast,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY,
+                31,
+                8,
+            )
+            sharpen_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+            sharpened = cv2.filter2D(adaptive, -1, sharpen_kernel)
+            max_dim = 2400
 
         height, width = sharpened.shape[:2]
-        max_dim = 2400
         scale = min(1.0, max_dim / max(height, width))
         if scale < 1.0:
             sharpened = cv2.resize(

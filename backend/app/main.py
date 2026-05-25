@@ -51,10 +51,12 @@ async def lifespan(_: FastAPI):
     if settings.trocr_enabled:
         ocr_engines.append("trocr")
 
+    cors_origins = settings.cors_origin_list
     logger.info(
-        "API ready | OCR: %s (low_memory=%s) | LLM: %s @ %s",
+        "API ready | OCR: %s (low_memory=%s) | CORS: %s | LLM: %s @ %s",
         "+".join(ocr_engines) or "none",
         settings.is_low_memory_deploy,
+        cors_origins or "(none — set FRONTEND_URL)",
         settings.chat_model,
         llm_host,
     )
@@ -75,12 +77,17 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    cors_origins = settings.cors_origin_list
+    if not cors_origins:
+        # Dev fallback: allow any origin without credentials (axios default).
+        cors_origins = ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
-        allow_methods=["*"],
+        allow_origins=cors_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=["*"],
     )
 
     @app.exception_handler(AppException)
@@ -123,6 +130,7 @@ def create_app() -> FastAPI:
             "mongodb_error": mongodb_provider.last_error
             if mongo_status == "disconnected"
             else None,
+            "cors_allowed_origins": settings.cors_origin_list,
         }
 
     app.include_router(api_router)

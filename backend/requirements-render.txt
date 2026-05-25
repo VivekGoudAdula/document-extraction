@@ -1,4 +1,4 @@
-# Render / low-memory hosts (512MB–1GB). PaddleOCR only — no PyTorch/TrOCR.
+# Render 512MB–1GB: PaddleOCR 2.x (lighter than 3.x / PaddleX). No PyTorch/TrOCR.
 # Python 3.11 — see runtime.txt
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
@@ -11,5 +11,5 @@ motor>=3.6.0
 pydantic-settings>=2.6.0
 python-dotenv>=1.0.1
 pymongo>=4.9.0
-paddleocr>=2.7.0,<3.6.0
-paddlepaddle>=2.6.2,<3.2.0
+paddleocr==2.7.3
+paddlepaddle==2.6.2

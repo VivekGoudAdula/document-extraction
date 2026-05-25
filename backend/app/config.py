@@ -1,8 +1,11 @@
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -85,21 +88,25 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        if self.cors_origins.strip() == "*":
-            combined: list[str] = []
-            if self.frontend_url and self.frontend_url.strip():
-                combined.append(self.frontend_url.strip().rstrip("/"))
-            return combined or ["*"]
-
+        """Explicit origins only in production — never rely on '*' with credentials."""
         origins: list[str] = []
+
         if self.frontend_url and self.frontend_url.strip():
             origins.append(self.frontend_url.strip().rstrip("/"))
-        origins.extend(
-            origin.strip().rstrip("/")
-            for origin in self.cors_origins.split(",")
-            if origin.strip()
-        )
-        # Preserve order, drop duplicates
+
+        if self.cors_origins.strip() != "*":
+            origins.extend(
+                origin.strip().rstrip("/")
+                for origin in self.cors_origins.split(",")
+                if origin.strip()
+            )
+
+        if self.is_low_memory_deploy and not origins:
+            logger.warning(
+                "FRONTEND_URL or CORS_ORIGINS not set on Render — browser requests will be blocked. "
+                "Set FRONTEND_URL=https://document-extraction-ultrion.vercel.app"
+            )
+
         seen: set[str] = set()
         unique: list[str] = []
         for origin in origins:
@@ -107,6 +114,11 @@ class Settings(BaseSettings):
                 seen.add(origin)
                 unique.append(origin)
         return unique
+
+    @property
+    def cors_allow_credentials(self) -> bool:
+        # Browsers reject Access-Control-Allow-Origin: * with credentials.
+        return bool(self.cors_origin_list)
 
 
 @lru_cache
