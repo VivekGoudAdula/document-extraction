@@ -1,0 +1,109 @@
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.config import UPLOADS_DIR, get_settings
+from app.providers.mongodb_provider import mongodb_provider
+from app.routes import api_router
+from app.utils.exceptions import AppException
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    from app.providers.llm.openai_provider import reset_openai_provider
+    from app.providers.ocr.model_loader import warmup_ocr_models
+
+    get_settings.cache_clear()
+    reset_openai_provider()
+    settings = get_settings()
+    llm_host = (
+        settings.azure_endpoint
+        if settings.use_azure_openai
+        else "api.openai.com"
+    )
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    await mongodb_provider.connect()
+
+    logger.info(
+        "Loading local OCR models (PaddleOCR + TrOCR) — images stay on-server..."
+    )
+    try:
+        await warmup_ocr_models()
+    except Exception as exc:
+        logger.warning(
+            "OCR model warmup failed (%s). Models will load on first request.",
+            exc,
+        )
+
+    logger.info(
+        "Secure extraction API ready | OCR: local only | LLM: %s @ %s | MongoDB: %s",
+        settings.chat_model,
+        llm_host,
+        settings.mongo_uri.split("@")[-1] if "@" in settings.mongo_uri else settings.mongo_uri,
+    )
+    yield
+    await mongodb_provider.disconnect()
+
+
+def create_app() -> FastAPI:
+    settings = get_settings()
+
+    app = FastAPI(
+        title="Intelligent Document Extraction API",
+        description=(
+            "Enterprise document extraction: local PaddleOCR + TrOCR on-server, "
+            "GPT-4o semantic extraction only."
+        ),
+        version="4.0.0",
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.exception_handler(AppException)
+    async def app_exception_handler(_: Request, exc: AppException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.message},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(_: Request, exc: RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Request validation failed.", "errors": exc.errors()},
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(_: Request, exc: Exception):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An unexpected server error occurred.", "error": str(exc)},
+        )
+
+    @app.get("/health")
+    async def health_check():
+        return {
+            "status": "ok",
+            "pipeline": "opencv-paddleocr-trocr-gpt4o",
+            "ocr_execution_mode": "local",
+        }
+
+    app.include_router(api_router)
+    return app
+
+
+app = create_app()
