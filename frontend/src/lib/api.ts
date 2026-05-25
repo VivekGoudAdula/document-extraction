@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 
-import { API_BASE_URL } from "@/lib/constants";
+import { API_BASE_URL, HEALTH_API_PATH } from "@/lib/constants";
 import type { ExtractionResponse } from "@/types/extraction";
 
 /** First /extract on Render may load OCR models; allow up to 10 minutes. */
@@ -17,7 +17,7 @@ const api = axios.create({
 });
 
 const healthApi = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: HEALTH_API_PATH.startsWith("/api") ? "" : API_BASE_URL,
   timeout: HEALTH_TIMEOUT_MS,
 });
 
@@ -29,8 +29,28 @@ export type HealthStatus = {
 };
 
 export async function fetchHealth(): Promise<HealthStatus> {
-  const { data } = await healthApi.get<HealthStatus>("/health");
+  const { data } = await healthApi.get<HealthStatus>(HEALTH_API_PATH);
   return data;
+}
+
+/** Wait until Render finishes starting (avoids 502 during deploy/cold start). */
+export async function waitForBackendReady(maxWaitMs = 120_000): Promise<void> {
+  const deadline = Date.now() + maxWaitMs;
+  let lastError: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      const health = await fetchHealth();
+      if (health.status === "ok" || health.status === "degraded") {
+        return;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await delay(3_000);
+  }
+
+  throw lastError ?? new Error("API did not become ready in time.");
 }
 
 /** Wake Render free tier before the user uploads (cold start ~30–60s). */
@@ -66,6 +86,7 @@ export async function extractDocument(
 
   for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
     try {
+      await waitForBackendReady();
       const { data } = await api.post<ExtractionResponse>("/extract", formData);
       return data;
     } catch (error) {

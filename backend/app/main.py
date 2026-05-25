@@ -80,17 +80,23 @@ def create_app() -> FastAPI:
     )
 
     cors_origins = settings.cors_origin_list
-    if not cors_origins:
-        # Dev fallback: allow any origin without credentials (axios default).
-        cors_origins = ["*"]
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=cors_origins,
-        allow_credentials=settings.cors_allow_credentials,
-        allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-    )
+    cors_kwargs: dict = {
+        "allow_methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["*"],
+        "expose_headers": ["*"],
+    }
+    if settings.is_low_memory_deploy:
+        cors_kwargs["allow_origin_regex"] = r"https://([a-z0-9-]+\.)*vercel\.app"
+        cors_kwargs["allow_origins"] = cors_origins or []
+        cors_kwargs["allow_credentials"] = True
+    elif cors_origins:
+        cors_kwargs["allow_origins"] = cors_origins
+        cors_kwargs["allow_credentials"] = settings.cors_allow_credentials
+    else:
+        cors_kwargs["allow_origins"] = ["*"]
+        cors_kwargs["allow_credentials"] = False
+
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
 
     @app.middleware("http")
     async def ensure_cors_headers(request: Request, call_next):

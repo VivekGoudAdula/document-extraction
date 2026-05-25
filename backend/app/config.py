@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.deploy_urls import PRODUCTION_FRONTEND_URL
+
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,10 +35,9 @@ class Settings(BaseSettings):
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db_name: str = "document_extraction"
     mongo_collection_name: str = "extractions"
-    # Comma-separated allowed browser origins, or "*" for dev.
-    cors_origins: str = "*"
-    # Optional: your Vercel URL (same value you set on Vercel). Merged into CORS allowlist.
-    frontend_url: str | None = None
+    # Comma-separated allowed browser origins. Use "*" in local .env to allow all.
+    cors_origins: str = PRODUCTION_FRONTEND_URL
+    frontend_url: str | None = PRODUCTION_FRONTEND_URL
 
     # OCR — set OCR_LOW_MEMORY=true on Render (512MB). Disables TrOCR + startup warmup.
     ocr_low_memory: bool = False
@@ -99,6 +100,8 @@ class Settings(BaseSettings):
         """Explicit origins only in production — never rely on '*' with credentials."""
         origins: list[str] = []
 
+        origins.append(PRODUCTION_FRONTEND_URL.rstrip("/"))
+
         if self.frontend_url and self.frontend_url.strip():
             origins.append(self.frontend_url.strip().rstrip("/"))
 
@@ -107,12 +110,6 @@ class Settings(BaseSettings):
                 origin.strip().rstrip("/")
                 for origin in self.cors_origins.split(",")
                 if origin.strip()
-            )
-
-        if self.is_low_memory_deploy and not origins:
-            logger.warning(
-                "FRONTEND_URL or CORS_ORIGINS not set on Render — browser requests will be blocked. "
-                "Set FRONTEND_URL=https://document-extraction-ultrion.vercel.app"
             )
 
         seen: set[str] = set()
@@ -132,6 +129,8 @@ class Settings(BaseSettings):
         if not origin:
             return False
         normalized = origin.strip().rstrip("/")
+        if normalized == PRODUCTION_FRONTEND_URL.rstrip("/"):
+            return True
         if normalized in self.cors_origin_list:
             return True
         if normalized in (
