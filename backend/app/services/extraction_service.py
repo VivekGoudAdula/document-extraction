@@ -10,17 +10,23 @@ Flow (confidential images stay on-server for OCR):
 6. Persist to MongoDB
 """
 
+import gc
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import UploadFile
 
+from app.config import Settings, get_settings
 from app.providers.llm.openai_provider import get_openai_provider
 from app.providers.mongodb_provider import mongodb_provider
+from app.services.ocr_lock import get_ocr_semaphore
 from app.services.ocr_pipeline_service import ocr_pipeline_service
 from app.utils.exceptions import DocumentExtractionError, OpenAIProviderError
 from app.utils.file_utils import save_upload_file
+
+logger = logging.getLogger(__name__)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
@@ -32,6 +38,22 @@ class ExtractionService:
         upload_file: UploadFile,
         extraction_prompt: str,
     ) -> dict[str, Any]:
+        settings = get_settings()
+
+        async with get_ocr_semaphore():
+            return await self._process_extraction_locked(
+                upload_file=upload_file,
+                extraction_prompt=extraction_prompt,
+                settings=settings,
+            )
+
+    async def _process_extraction_locked(
+        self,
+        *,
+        upload_file: UploadFile,
+        extraction_prompt: str,
+        settings: Settings,
+    ) -> dict[str, Any]:
         file_path = await save_upload_file(upload_file)
         filename = file_path.name
 
@@ -40,14 +62,18 @@ class ExtractionService:
                 "Only image uploads are supported (PNG, JPG, JPEG, WEBP)."
             )
 
-        preprocessed_path = ocr_pipeline_service.prepare_for_ocr(file_path)
+        try:
+            preprocessed_path = ocr_pipeline_service.prepare_for_ocr(file_path)
 
-        fusion_context, paddle_result, trocr_result = (
-            await ocr_pipeline_service.build_fusion_context(
-                file_path,
-                preprocessed_path=preprocessed_path,
+            fusion_context, paddle_result, trocr_result = (
+                await ocr_pipeline_service.build_fusion_context(
+                    file_path,
+                    preprocessed_path=preprocessed_path,
+                )
             )
-        )
+        finally:
+            if settings.is_low_memory_deploy:
+                gc.collect()
 
         paddle_ok = paddle_result.get("success", False)
         trocr_ok = trocr_result.get("success", False)
@@ -75,11 +101,15 @@ class ExtractionService:
             or ""
         )
 
+        llm_image = file_path if settings.llm_vision_enabled else None
+        if not settings.llm_vision_enabled:
+            logger.info("LLM vision disabled on low-memory deploy (OCR text only)")
+
         try:
             ai_response = await get_openai_provider().extract_hybrid_structured(
                 fusion_context=fusion_context,
                 user_prompt=extraction_prompt,
-                image_path=file_path,
+                image_path=llm_image,
                 fallback_document_text=fallback_text,
             )
         except OpenAIProviderError:
@@ -114,7 +144,7 @@ class ExtractionService:
                 "paddleocr_success": paddle_ok,
                 "trocr_success": trocr_ok,
                 "fusion_applied": True,
-                "vision_used": True,
+                "vision_used": settings.llm_vision_enabled,
                 "ocr_execution_mode": "local",
             },
             "paddleocr_output": paddle_result,

@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import { extractDocument, getApiErrorMessage } from "@/lib/api";
+import {
+  extractDocument,
+  fetchHealth,
+  getApiErrorMessage,
+  wakeBackend,
+  type HealthStatus,
+} from "@/lib/api";
 import type { ExtractionResponse, JsonValue } from "@/types/extraction";
 
 import { ExtractionResult } from "./ExtractionResult";
@@ -23,8 +29,26 @@ export function ExtractionWorkspace() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [waking, setWaking] = useState(true);
+  const [apiReady, setApiReady] = useState(false);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [result, setResult] = useState<ExtractionResponse | null>(null);
   const [resultView, setResultView] = useState<ResultView>("formatted");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setWaking(true);
+      const status = await wakeBackend();
+      if (cancelled) return;
+      setHealth(status);
+      setApiReady(status?.status === "ok" || status?.status === "degraded");
+      setWaking(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -64,6 +88,11 @@ export function ExtractionWorkspace() {
       return;
     }
 
+    if (!apiReady) {
+      toast.error("API is still starting. Wait a moment and try again.");
+      return;
+    }
+
     setLoading(true);
     setResult(null);
 
@@ -71,8 +100,16 @@ export function ExtractionWorkspace() {
       const response = await extractDocument(file, trimmedPrompt);
       setResult(response);
       toast.success("Extraction complete");
+      const refreshed = await fetchHealth().catch(() => null);
+      if (refreshed) setHealth(refreshed);
     } catch (error) {
       toast.error(getApiErrorMessage(error));
+      await wakeBackend().then((s) => {
+        if (s) {
+          setHealth(s);
+          setApiReady(s.status === "ok" || s.status === "degraded");
+        }
+      });
     } finally {
       setLoading(false);
     }
@@ -91,6 +128,19 @@ export function ExtractionWorkspace() {
           PaddleOCR, and TrOCR run locally on our server; only GPT-4o semantic
           extraction uses an external API.
         </p>
+        {waking ? (
+          <p className="mt-2 text-sm text-amber-700">Connecting to API…</p>
+        ) : apiReady ? (
+          <p className="mt-2 text-sm text-emerald-700">
+            API ready
+            {health?.mongodb === "connected" ? " · MongoDB connected" : ""}
+            {health?.paddle_models_cached ? " · OCR models cached" : ""}
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-red-700">
+            API unreachable — check Render is running, then refresh this page.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
@@ -99,7 +149,7 @@ export function ExtractionWorkspace() {
             <LoadingSpinner
               overlay
               label="Running Local OCR…"
-              sublabel="First request on cloud may take 2–5 min while OCR models load"
+              sublabel="Cloud OCR can take 1–3 min. Do not upload again until this finishes."
             />
           )}
 
@@ -146,7 +196,7 @@ export function ExtractionWorkspace() {
 
             <button
               type="submit"
-              disabled={loading || !file}
+              disabled={loading || waking || !apiReady || !file}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none sm:w-auto sm:min-w-[200px]"
             >
               {loading ? (

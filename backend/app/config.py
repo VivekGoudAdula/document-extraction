@@ -70,6 +70,13 @@ class Settings(BaseSettings):
         return self.ocr_warmup_on_startup
 
     @property
+    def llm_vision_enabled(self) -> bool:
+        """Skip GPT-4o vision on Render — OCR text only saves RAM."""
+        if self.is_low_memory_deploy:
+            return os.getenv("LLM_ENABLE_VISION", "").lower() in ("true", "1", "yes")
+        return True
+
+    @property
     def use_azure_openai(self) -> bool:
         return bool(self.openai_endpoint and self.openai_endpoint.strip())
 

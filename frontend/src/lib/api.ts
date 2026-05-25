@@ -5,11 +5,54 @@ import type { ExtractionResponse } from "@/types/extraction";
 
 /** First /extract on Render may load OCR models; allow up to 10 minutes. */
 const EXTRACT_TIMEOUT_MS = 600_000;
+const HEALTH_TIMEOUT_MS = 60_000;
+
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const MAX_EXTRACT_ATTEMPTS = 4;
+const RETRY_DELAY_MS = 20_000;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: EXTRACT_TIMEOUT_MS,
 });
+
+const healthApi = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: HEALTH_TIMEOUT_MS,
+});
+
+export type HealthStatus = {
+  status?: string;
+  mongodb?: string;
+  paddle_models_cached?: boolean;
+  paddleocr_loaded?: boolean;
+};
+
+export async function fetchHealth(): Promise<HealthStatus> {
+  const { data } = await healthApi.get<HealthStatus>("/health");
+  return data;
+}
+
+/** Wake Render free tier before the user uploads (cold start ~30–60s). */
+export async function wakeBackend(): Promise<HealthStatus | null> {
+  try {
+    return await fetchHealth();
+  } catch {
+    return null;
+  }
+}
+
+function isRetryableExtractError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  if (status !== undefined && RETRYABLE_STATUSES.has(status)) return true;
+  if (!error.response && error.code !== "ECONNABORTED") return true;
+  return false;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function extractDocument(
   file: File,
@@ -19,10 +62,24 @@ export async function extractDocument(
   formData.append("file", file);
   formData.append("extraction_prompt", extractionPrompt);
 
-  // Do not set Content-Type manually — Axios must add the multipart boundary.
-  const { data } = await api.post<ExtractionResponse>("/extract", formData);
+  let lastError: unknown;
 
-  return data;
+  for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
+    try {
+      const { data } = await api.post<ExtractionResponse>("/extract", formData);
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_EXTRACT_ATTEMPTS && isRetryableExtractError(error)) {
+        await delay(RETRY_DELAY_MS);
+        await wakeBackend();
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError;
 }
 
 type ApiErrorBody = {
@@ -49,21 +106,20 @@ export function getApiErrorMessage(error: unknown): string {
     if (typeof data?.error === "string") return data.error;
     if (axiosError.code === "ECONNABORTED") {
       return (
-        "Request timed out. The server may still be loading OCR models on first run — " +
-        "wait a minute and try again, or check Render logs."
+        "Request timed out. OCR on the free cloud tier can take several minutes — " +
+        "wait and try once more (only one upload at a time)."
       );
     }
     if (axiosError.response?.status === 502) {
       return (
-        "Backend unavailable (502). The server likely ran out of memory during OCR — " +
-        "check Render logs, confirm MONGO_URI and FRONTEND_URL are set, then redeploy. " +
-        "First extract on the free plan can take several minutes."
+        "Backend restarted or ran out of memory (502). Wait ~30 seconds and try again. " +
+        "Avoid uploading several images at once on the free Render plan."
       );
     }
-    if (!axiosError.response && axiosError.message?.includes("Network Error")) {
+    if (!axiosError.response) {
       return (
-        "Cannot reach the API. If the browser mentions CORS, the backend may have crashed (502) — " +
-        "open Render logs and /health on your API URL."
+        "Cannot reach the API. If the browser shows CORS, the backend likely returned 502 " +
+        "after a crash — wait for Render to finish starting, then retry."
       );
     }
     if (axiosError.message) return axiosError.message;
