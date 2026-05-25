@@ -89,6 +89,10 @@ def _format_openai_error(exc: RateLimitError | APIStatusError) -> str:
 class OpenAIProvider:
     def __init__(self) -> None:
         settings = get_settings()
+        if not settings.openai_api_key.strip():
+            raise OpenAIProviderError(
+                "OPENAI_API_KEY is not set. Add it in Render → Environment."
+            )
         self._use_azure = settings.use_azure_openai
 
         if self._use_azure:
@@ -198,6 +202,3 @@ def get_openai_provider() -> OpenAIProvider:
 def reset_openai_provider() -> None:
     global _provider
     _provider = None
-
-
-openai_provider = get_openai_provider()

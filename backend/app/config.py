@@ -5,8 +5,9 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    openai_api_key: str
+    openai_api_key: str = ""
     openai_endpoint: str | None = None
     openai_api_version: str = "2024-12-01-preview"
     openai_gpt_deployment: str | None = None
