@@ -41,16 +41,15 @@ def _get_paddle_ocr():
 
     import paddleocr as paddleocr_pkg
 
-        settings = get_settings()
-        version = getattr(paddleocr_pkg, "__version__", "unknown")
-        os.environ["FLAGS_use_mkldnn"] = "0"
-        # Avoid duplicate GUI OpenCV wheels (common segfault on Linux cloud hosts).
-        try:
-            import cv2  # noqa: F401
-        except ImportError as exc:
-            raise RuntimeError(
-                "OpenCV not installed. Render build must use opencv-python-headless==4.6.0.66"
-            ) from exc
+    settings = get_settings()
+    version = getattr(paddleocr_pkg, "__version__", "unknown")
+    os.environ["FLAGS_use_mkldnn"] = "0"
+    try:
+        import cv2  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "OpenCV not installed. Render build must use opencv-python-headless==4.6.0.66"
+        ) from exc
 
     if settings.is_low_memory_deploy:
         if version.startswith("3."):
