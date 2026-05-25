@@ -53,6 +53,19 @@ export function getApiErrorMessage(error: unknown): string {
         "wait a minute and try again, or check Render logs."
       );
     }
+    if (axiosError.response?.status === 502) {
+      return (
+        "Backend unavailable (502). The server likely ran out of memory during OCR — " +
+        "check Render logs, confirm MONGO_URI and FRONTEND_URL are set, then redeploy. " +
+        "First extract on the free plan can take several minutes."
+      );
+    }
+    if (!axiosError.response && axiosError.message?.includes("Network Error")) {
+      return (
+        "Cannot reach the API. If the browser mentions CORS, the backend may have crashed (502) — " +
+        "open Render logs and /health on your API URL."
+      );
+    }
     if (axiosError.message) return axiosError.message;
   }
 

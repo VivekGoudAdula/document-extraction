@@ -4,5 +4,6 @@ __pycache__/
 *.py[cod]
 uploads/*
 !uploads/.gitkeep
+.paddleocr/
 .pytest_cache/
 .mypy_cache/

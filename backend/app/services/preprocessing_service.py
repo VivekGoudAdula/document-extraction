@@ -62,7 +62,7 @@ class PreprocessingService:
         if low_memory:
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             sharpened = clahe.apply(gray)
-            max_dim = 1600
+            max_dim = 1024
         else:
             denoised = cv2.fastNlMeansDenoising(gray, h=10)
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))

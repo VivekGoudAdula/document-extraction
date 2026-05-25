@@ -1,15 +1,16 @@
 """
-Pre-download PaddleOCR 2.x weights during Render BUILD (~16MB total).
-Without this, the first /extract downloads models from the internet (2–5+ minutes).
+Pre-download PaddleOCR 2.x det+rec weights during Render BUILD (~16MB).
+Cached under backend/.paddleocr/ (HOME=backend dir) so runtime does not download.
 """
 import os
 import sys
 from pathlib import Path
 
+BACKEND_DIR = Path(__file__).resolve().parent.parent
 os.environ["FLAGS_use_mkldnn"] = "0"
-# Render build/runtime home — models baked into the deploy image
-os.environ.setdefault("HOME", "/opt/render")
-PADDLE_HOME = Path(os.environ["HOME"]) / ".paddleocr"
+os.environ["HOME"] = str(BACKEND_DIR)
+
+PADDLE_HOME = BACKEND_DIR / ".paddleocr"
 
 
 def main() -> None:
@@ -19,6 +20,7 @@ def main() -> None:
 
     import cv2
 
+    print(f"HOME={os.environ['HOME']}")
     print(f"opencv: {cv2.__version__}")
 
     import paddleocr
@@ -31,17 +33,24 @@ def main() -> None:
 
     from paddleocr import PaddleOCR
 
-    print("Downloading PaddleOCR models (one-time at build)...")
+    print("Downloading PaddleOCR det+rec models (build step)...")
     PaddleOCR(
         lang="en",
         use_angle_cls=False,
         show_log=False,
-        det_limit_side_len=640,
+        det_limit_side_len=512,
         rec_batch_num=1,
+        cpu_threads=2,
     )
-    print(f"PaddleOCR models cached under {PADDLE_HOME}")
-    if not PADDLE_HOME.exists():
-        sys.exit("PaddleOCR cache directory missing after init")
+
+    det = PADDLE_HOME / "whl" / "det" / "en" / "en_PP-OCRv3_det_infer"
+    rec = PADDLE_HOME / "whl" / "rec" / "en" / "en_PP-OCRv4_rec_infer"
+    if not det.is_dir() or not rec.is_dir():
+        print(f"FATAL: missing cached models under {PADDLE_HOME}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"OK: det={det}")
+    print(f"OK: rec={rec}")
     sys.exit(0)
 
 

@@ -40,8 +40,11 @@ print("cv2", cv2.__version__)
 print("paddleocr", paddleocr.__version__)
 PY
 
-echo "=== Pre-download PaddleOCR models (required) ==="
-export HOME="${HOME:-/opt/render}"
+echo "=== Pre-download PaddleOCR models into backend/.paddleocr (required) ==="
+export HOME="${ROOT}"
 python "${ROOT}/scripts/cache_paddle_models.py"
+test -d "${ROOT}/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer"
+test -d "${ROOT}/.paddleocr/whl/rec/en/en_PP-OCRv4_rec_infer"
+du -sh "${ROOT}/.paddleocr"
 
 echo "=== Build OK ==="

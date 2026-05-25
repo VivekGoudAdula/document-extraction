@@ -1,6 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
 
+import app.paddle_env  # noqa: F401 — set HOME for Paddle cache before OCR imports
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +11,7 @@ from fastapi.responses import JSONResponse, Response
 from app.config import UPLOADS_DIR, get_settings
 from app.providers.mongodb_provider import mongodb_provider
 from app.routes import api_router
+from app.utils.cors import apply_cors_to_response, cors_headers_for_request
 from app.utils.exceptions import AppException
 
 logger = logging.getLogger(__name__)
@@ -49,7 +52,6 @@ async def lifespan(_: FastAPI):
         ocr_engines.append("trocr")
 
     cors_origins = settings.cors_origin_list
-    from app.providers.ocr.model_loader import schedule_background_paddle_warmup
 
     logger.info(
         "API ready | OCR: %s (low_memory=%s) | CORS: %s | LLM: %s @ %s",
@@ -59,9 +61,6 @@ async def lifespan(_: FastAPI):
         settings.chat_model,
         llm_host,
     )
-
-    if settings.is_low_memory_deploy and settings.paddle_enabled:
-        schedule_background_paddle_warmup()
 
     yield
     await mongodb_provider.disconnect()
@@ -95,48 +94,41 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def ensure_cors_headers(request: Request, call_next):
-        """Guarantee CORS headers on every response (including 4xx/5xx)."""
-        origin = request.headers.get("origin")
-        settings_ref = get_settings()
-
-        if request.method == "OPTIONS" and origin:
-            if settings_ref.is_origin_allowed(origin):
-                return Response(
-                    status_code=204,
-                    headers={
-                        "Access-Control-Allow-Origin": origin,
-                        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                        "Access-Control-Allow-Headers": "*",
-                        "Access-Control-Max-Age": "86400",
-                    },
-                )
+        """Guarantee CORS headers on every app response (including 4xx/5xx)."""
+        if request.method == "OPTIONS" and request.headers.get("origin"):
+            headers = cors_headers_for_request(request)
+            if headers:
+                headers["Access-Control-Max-Age"] = "86400"
+                return Response(status_code=204, headers=headers)
 
         response = await call_next(request)
-        if origin and settings_ref.is_origin_allowed(origin):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "*"
-        return response
+        return apply_cors_to_response(request, response)
 
     @app.exception_handler(AppException)
-    async def app_exception_handler(_: Request, exc: AppException):
+    async def app_exception_handler(request: Request, exc: AppException):
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.message},
+            headers=cors_headers_for_request(request),
         )
 
     @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(_: Request, exc: RequestValidationError):
+    async def validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
         return JSONResponse(
             status_code=422,
             content={"detail": "Request validation failed.", "errors": exc.errors()},
+            headers=cors_headers_for_request(request),
         )
 
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(_: Request, exc: Exception):
+    async def unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception("Unhandled error: %s", exc)
         return JSONResponse(
             status_code=500,
             content={"detail": "An unexpected server error occurred.", "error": str(exc)},
+            headers=cors_headers_for_request(request),
         )
 
     @app.get("/health")
@@ -170,7 +162,10 @@ def create_app() -> FastAPI:
         except Exception:
             pass
 
+        from app.paddle_env import cached_det_rec_dirs, paddle_cache_root
         from app.providers.ocr.paddle_provider import is_paddle_loaded
+
+        det_dir, rec_dir = cached_det_rec_dirs()
 
         return {
             "status": "ok" if mongo_status == "connected" else "degraded",
@@ -188,12 +183,15 @@ def create_app() -> FastAPI:
                 numpy_version.startswith("1.") if numpy_version else None
             ),
             "paddleocr_loaded": is_paddle_loaded(),
+            "paddle_models_cached": det_dir is not None and rec_dir is not None,
+            "paddle_cache_root": str(paddle_cache_root()),
             "low_memory_mode": settings.is_low_memory_deploy,
             "mongodb": mongo_status,
             "mongodb_error": mongodb_provider.last_error
             if mongo_status == "disconnected"
             else None,
             "cors_allowed_origins": settings.cors_origin_list,
+            "cors_vercel_allowed": True,
         }
 
     @app.api_route("/", methods=["GET", "HEAD"])

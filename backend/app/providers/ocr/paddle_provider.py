@@ -10,6 +10,7 @@ import os
 import threading
 from pathlib import Path
 
+from app.paddle_env import cached_det_rec_dirs, configure_paddle_home
 from app.models.ocr_models import OCRResult
 from app.providers.ocr.base import OCRProvider
 
@@ -26,22 +27,38 @@ _paddle_lock = threading.Lock()
 def _create_paddle_ocr_v2(*, low_memory: bool = False):
     from paddleocr import PaddleOCR
 
-    base = {"lang": "en", "use_angle_cls": False, "show_log": False}
+    configure_paddle_home()
+    kwargs: dict = {
+        "lang": "en",
+        "use_angle_cls": False,
+        "show_log": False,
+    }
     if low_memory:
-        base["det_limit_side_len"] = 640
-        base["rec_batch_num"] = 1
+        kwargs.update(
+            {
+                "det_limit_side_len": 512,
+                "rec_batch_num": 1,
+                "cpu_threads": 2,
+            }
+        )
+    else:
+        kwargs["det_limit_side_len"] = 960
 
-    for extra in ({}, {"det_limit_side_len": 960}):
-        kwargs = {**base, **extra}
-        try:
-            return PaddleOCR(**kwargs)
-        except TypeError:
-            kwargs.pop("show_log", None)
-            try:
-                return PaddleOCR(**{k: v for k, v in kwargs.items() if v is not None})
-            except Exception as exc:
-                logger.debug("PaddleOCR init %s: %s", kwargs, exc)
-    return PaddleOCR(lang="en", use_angle_cls=False)
+    det_dir, rec_dir = cached_det_rec_dirs()
+    if det_dir and rec_dir:
+        kwargs["det_model_dir"] = det_dir
+        kwargs["rec_model_dir"] = rec_dir
+        logger.info("Using baked Paddle models (no runtime download)")
+
+    try:
+        engine = PaddleOCR(**kwargs)
+    except TypeError:
+        kwargs.pop("show_log", None)
+        engine = PaddleOCR(**kwargs)
+
+    limit = kwargs.get("det_limit_side_len", "?")
+    logger.info("PaddleOCR ready | det_limit_side_len=%s | cls=off", limit)
+    return engine
 
 
 def _get_paddle_ocr():
@@ -59,6 +76,7 @@ def _get_paddle_ocr():
 
         settings = get_settings()
         version = getattr(paddleocr_pkg, "__version__", "unknown")
+        configure_paddle_home()
         os.environ["FLAGS_use_mkldnn"] = "0"
         try:
             import cv2  # noqa: F401

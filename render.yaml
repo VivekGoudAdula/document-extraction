@@ -13,8 +13,6 @@ services:
         value: "true"
       - key: OCR_WARMUP_ON_STARTUP
         value: "false"
-      - key: HOME
-        value: /opt/render
       - key: MONGO_URI
         sync: false
       - key: OPENAI_API_KEY

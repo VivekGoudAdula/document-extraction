@@ -127,10 +127,14 @@ class Settings(BaseSettings):
         normalized = origin.strip().rstrip("/")
         if normalized in self.cors_origin_list:
             return True
-        # Vercel preview deployments (*.vercel.app) when production URL is on Vercel.
-        if self.frontend_url and "vercel.app" in self.frontend_url:
-            if normalized.endswith(".vercel.app"):
-                return True
+        if normalized in (
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ):
+            return True
+        # Frontend is hosted on Vercel (prod + preview URLs).
+        if normalized.endswith(".vercel.app"):
+            return True
         return False
 
 
