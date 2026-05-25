@@ -7,6 +7,7 @@ SECURITY: PaddleOCR runs entirely on this server. No cloud OCR API calls.
 import asyncio
 import logging
 import os
+import threading
 from pathlib import Path
 
 from app.models.ocr_models import OCRResult
@@ -19,17 +20,28 @@ EXECUTION_MODE = "local"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 _paddle_ocr = None
+_paddle_lock = threading.Lock()
 
 
-def _create_paddle_ocr_v2():
+def _create_paddle_ocr_v2(*, low_memory: bool = False):
     from paddleocr import PaddleOCR
 
-    for kwargs in ({"lang": "en", "use_angle_cls": False}, {"lang": "en"}):
+    base = {"lang": "en", "use_angle_cls": False, "show_log": False}
+    if low_memory:
+        base["det_limit_side_len"] = 640
+        base["rec_batch_num"] = 1
+
+    for extra in ({}, {"det_limit_side_len": 960}):
+        kwargs = {**base, **extra}
         try:
             return PaddleOCR(**kwargs)
-        except Exception as exc:
-            logger.debug("PaddleOCR init %s: %s", kwargs, exc)
-    return PaddleOCR(lang="en")
+        except TypeError:
+            kwargs.pop("show_log", None)
+            try:
+                return PaddleOCR(**{k: v for k, v in kwargs.items() if v is not None})
+            except Exception as exc:
+                logger.debug("PaddleOCR init %s: %s", kwargs, exc)
+    return PaddleOCR(lang="en", use_angle_cls=False)
 
 
 def _get_paddle_ocr():
@@ -37,41 +49,46 @@ def _get_paddle_ocr():
     if _paddle_ocr is not None:
         return _paddle_ocr
 
-    from app.config import get_settings
+    with _paddle_lock:
+        if _paddle_ocr is not None:
+            return _paddle_ocr
 
-    import paddleocr as paddleocr_pkg
+        from app.config import get_settings
 
-    settings = get_settings()
-    version = getattr(paddleocr_pkg, "__version__", "unknown")
-    os.environ["FLAGS_use_mkldnn"] = "0"
-    try:
-        import cv2  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError(
-            "OpenCV not installed. Render build must use opencv-python-headless==4.6.0.66"
-        ) from exc
+        import paddleocr as paddleocr_pkg
 
-    if settings.is_low_memory_deploy:
-        if version.startswith("3."):
-            raise RuntimeError(
-                f"PaddleOCR {version} is too heavy for Render 512MB. "
-                "Set build command to: pip install -r requirements-render.txt"
-            )
-        logger.info("Loading PaddleOCR %s (cached after first load in this process)", version)
-        _paddle_ocr = _create_paddle_ocr_v2()
-    else:
-        os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
-        from paddleocr import PaddleOCR
-
-        logger.info("Loading PaddleOCR %s (full profile)", version)
+        settings = get_settings()
+        version = getattr(paddleocr_pkg, "__version__", "unknown")
+        os.environ["FLAGS_use_mkldnn"] = "0"
         try:
-            _paddle_ocr = PaddleOCR(
-                lang="en",
-                use_textline_orientation=True,
-            )
-        except TypeError:
-            _paddle_ocr = PaddleOCR(lang="en")
-    return _paddle_ocr
+            import cv2  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "OpenCV not installed. Render build must use opencv-python-headless==4.6.0.66"
+            ) from exc
+
+        if settings.is_low_memory_deploy:
+            if version.startswith("3."):
+                raise RuntimeError(
+                    f"PaddleOCR {version} is too heavy for Render 512MB. "
+                    "Set build command to: pip install -r requirements-render.txt"
+                )
+            logger.info("Loading PaddleOCR %s into memory", version)
+            _paddle_ocr = _create_paddle_ocr_v2(low_memory=True)
+        else:
+            os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+            from paddleocr import PaddleOCR
+
+            logger.info("Loading PaddleOCR %s (full profile)", version)
+            try:
+                _paddle_ocr = PaddleOCR(
+                    lang="en",
+                    use_textline_orientation=True,
+                )
+            except TypeError:
+                _paddle_ocr = PaddleOCR(lang="en")
+
+        return _paddle_ocr
 
 
 def _sort_lines_by_layout(lines: list[tuple[float, str, float]]) -> list[str]:
@@ -197,6 +214,10 @@ class PaddleOCRProvider(OCRProvider):
         path = Path(file_path)
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._extract_sync, path)
+
+
+def is_paddle_loaded() -> bool:
+    return _paddle_ocr is not None
 
 
 paddle_provider = PaddleOCRProvider()

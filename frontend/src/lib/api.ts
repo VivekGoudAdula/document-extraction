@@ -3,8 +3,8 @@ import axios, { AxiosError } from "axios";
 import { API_BASE_URL } from "@/lib/constants";
 import type { ExtractionResponse } from "@/types/extraction";
 
-/** First /extract on Render may load OCR; allow up to 5 minutes. */
-const EXTRACT_TIMEOUT_MS = 300_000;
+/** First /extract on Render may load OCR models; allow up to 10 minutes. */
+const EXTRACT_TIMEOUT_MS = 600_000;
 
 const api = axios.create({
   baseURL: API_BASE_URL,

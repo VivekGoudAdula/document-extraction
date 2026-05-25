@@ -40,10 +40,7 @@ async def lifespan(_: FastAPI):
     try:
         await warmup_ocr_models()
     except Exception as exc:
-        logger.warning(
-            "OCR model warmup failed (%s). Models will load on first request.",
-            exc,
-        )
+        logger.warning("OCR startup warmup failed: %s", exc)
 
     ocr_engines = []
     if settings.paddle_enabled:
@@ -52,6 +49,8 @@ async def lifespan(_: FastAPI):
         ocr_engines.append("trocr")
 
     cors_origins = settings.cors_origin_list
+    from app.providers.ocr.model_loader import schedule_background_paddle_warmup
+
     logger.info(
         "API ready | OCR: %s (low_memory=%s) | CORS: %s | LLM: %s @ %s",
         "+".join(ocr_engines) or "none",
@@ -60,6 +59,10 @@ async def lifespan(_: FastAPI):
         settings.chat_model,
         llm_host,
     )
+
+    if settings.is_low_memory_deploy and settings.paddle_enabled:
+        schedule_background_paddle_warmup()
+
     yield
     await mongodb_provider.disconnect()
 
@@ -167,6 +170,8 @@ def create_app() -> FastAPI:
         except Exception:
             pass
 
+        from app.providers.ocr.paddle_provider import is_paddle_loaded
+
         return {
             "status": "ok" if mongo_status == "connected" else "degraded",
             "pipeline": "opencv-" + "-".join(ocr_engines or ["none"]) + "-gpt4o",
@@ -182,6 +187,7 @@ def create_app() -> FastAPI:
             "numpy_ok_for_paddle": (
                 numpy_version.startswith("1.") if numpy_version else None
             ),
+            "paddleocr_loaded": is_paddle_loaded(),
             "low_memory_mode": settings.is_low_memory_deploy,
             "mongodb": mongo_status,
             "mongodb_error": mongodb_provider.last_error

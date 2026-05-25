@@ -99,7 +99,7 @@ export function ExtractionWorkspace() {
             <LoadingSpinner
               overlay
               label="Running Local OCR…"
-              sublabel="OCR inference running locally — PaddleOCR + TrOCR"
+              sublabel="First request on cloud may take 2–5 min while OCR models load"
             />
           )}
 

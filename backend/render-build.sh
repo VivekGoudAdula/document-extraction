@@ -40,7 +40,8 @@ print("cv2", cv2.__version__)
 print("paddleocr", paddleocr.__version__)
 PY
 
-echo "=== Optional model cache ==="
-python "${ROOT}/scripts/cache_paddle_models.py" || echo "WARN: model pre-cache skipped"
+echo "=== Pre-download PaddleOCR models (required) ==="
+export HOME="${HOME:-/opt/render}"
+python "${ROOT}/scripts/cache_paddle_models.py"
 
 echo "=== Build OK ==="
