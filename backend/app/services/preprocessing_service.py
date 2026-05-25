@@ -5,28 +5,48 @@ SECURITY: All operations run on the backend server. Processed images are saved
 to a local temp directory only — never uploaded to external services.
 """
 
+import logging
 import uuid
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 from app.config import UPLOADS_DIR
+
+logger = logging.getLogger(__name__)
+
 PREPROCESSED_DIR = UPLOADS_DIR / "preprocessed"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def _import_cv2():
+    try:
+        import cv2
+        import numpy as np
+
+        return cv2, np
+    except ImportError as exc:
+        raise ImportError(
+            "OpenCV (cv2) is not installed. Render build must run bash render-build.sh "
+            "and verify 'import cv2' succeeds."
+        ) from exc
 
 
 class PreprocessingService:
     def preprocess_image(self, image_path: str | Path) -> Path:
         """
         OpenCV pipeline: grayscale, denoise, contrast, adaptive threshold,
-        sharpen, resize for OCR.
+        sharpen, resize for OCR. Falls back to original image if cv2 is missing.
         """
         from app.config import get_settings
 
         source = Path(image_path)
         if source.suffix.lower() not in IMAGE_EXTENSIONS:
             raise ValueError(f"Not an image file: {source}")
+
+        try:
+            cv2, np = _import_cv2()
+        except ImportError as exc:
+            logger.warning("OpenCV unavailable, using original image: %s", exc)
+            return source
 
         low_memory = get_settings().is_low_memory_deploy
 
@@ -40,7 +60,6 @@ class PreprocessingService:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         if low_memory:
-            # Lighter pipeline for 512MB hosts (skip heavy denoise/threshold).
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             sharpened = clahe.apply(gray)
             max_dim = 1600

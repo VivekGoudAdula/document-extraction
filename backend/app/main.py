@@ -147,10 +147,17 @@ def create_app() -> FastAPI:
             ocr_engines.append("trocr")
         paddle_version = None
         numpy_version = None
+        cv2_version = None
         try:
             import numpy as _np
 
             numpy_version = _np.__version__
+        except Exception:
+            pass
+        try:
+            import cv2 as _cv2
+
+            cv2_version = _cv2.__version__
         except Exception:
             pass
         try:
@@ -167,6 +174,8 @@ def create_app() -> FastAPI:
             "ocr_engines": ocr_engines,
             "paddleocr_version": paddle_version,
             "numpy_version": numpy_version,
+            "cv2_version": cv2_version,
+            "opencv_ok": cv2_version is not None,
             "paddleocr_ok_for_render": (
                 paddle_version.startswith("2.") if paddle_version else None
             ),
