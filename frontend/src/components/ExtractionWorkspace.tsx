@@ -7,7 +7,7 @@ import {
   extractDocument,
   fetchHealth,
   getApiErrorMessage,
-  wakeBackend,
+  wakeBackendWithRetry,
   type HealthStatus,
 } from "@/lib/api";
 import type { ExtractionResponse, JsonValue } from "@/types/extraction";
@@ -39,7 +39,7 @@ export function ExtractionWorkspace() {
     let cancelled = false;
     (async () => {
       setWaking(true);
-      const status = await wakeBackend();
+      const status = await wakeBackendWithRetry();
       if (cancelled) return;
       setHealth(status);
       setApiReady(status?.status === "ok" || status?.status === "degraded");
@@ -104,7 +104,7 @@ export function ExtractionWorkspace() {
       if (refreshed) setHealth(refreshed);
     } catch (error) {
       toast.error(getApiErrorMessage(error));
-      await wakeBackend().then((s) => {
+      await wakeBackendWithRetry(4, 5_000).then((s) => {
         if (s) {
           setHealth(s);
           setApiReady(s.status === "ok" || s.status === "degraded");

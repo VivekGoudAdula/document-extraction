@@ -27,12 +27,11 @@ Set `NEXT_PUBLIC_API_URL` to your FastAPI server (default `http://localhost:8000
 
 | Variable | Value |
 |----------|--------|
-| `NEXT_PUBLIC_API_URL` | Your **Render backend URL** (e.g. `https://document-extraction-i7qv.onrender.com`) |
-| `BACKEND_URL` | Same Render URL (server-only; powers `/api/health` proxy) |
+| `NEXT_PUBLIC_API_URL` | Optional — defaults in code to `https://document-extraction-i7qv.onrender.com` |
 
-Set for **Production** (and Preview). Redeploy after changing.
+Set for **Production** (and Preview) only if you use a different backend URL. Redeploy after changing.
 
-`/extract` still calls Render directly (OCR can take several minutes; Vercel serverless cannot proxy that). `/api/health` on Vercel wakes the backend without browser CORS issues.
+Health and extract both call **Render directly** (CORS allows `*.vercel.app` on the API).
 
 On **Render**, set `FRONTEND_URL` to this Vercel URL so the API accepts browser requests.
 

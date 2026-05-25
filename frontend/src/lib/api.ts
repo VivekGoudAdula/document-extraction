@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 
-import { API_BASE_URL, HEALTH_API_PATH } from "@/lib/constants";
+import { API_BASE_URL } from "@/lib/constants";
 import type { ExtractionResponse } from "@/types/extraction";
 
 /** First /extract on Render may load OCR models; allow up to 10 minutes. */
@@ -17,7 +17,7 @@ const api = axios.create({
 });
 
 const healthApi = axios.create({
-  baseURL: HEALTH_API_PATH.startsWith("/api") ? "" : API_BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: HEALTH_TIMEOUT_MS,
 });
 
@@ -29,12 +29,12 @@ export type HealthStatus = {
 };
 
 export async function fetchHealth(): Promise<HealthStatus> {
-  const { data } = await healthApi.get<HealthStatus>(HEALTH_API_PATH);
+  const { data } = await healthApi.get<HealthStatus>("/health");
   return data;
 }
 
 /** Wait until Render finishes starting (avoids 502 during deploy/cold start). */
-export async function waitForBackendReady(maxWaitMs = 120_000): Promise<void> {
+export async function waitForBackendReady(maxWaitMs = 90_000): Promise<void> {
   const deadline = Date.now() + maxWaitMs;
   let lastError: unknown;
 
@@ -62,6 +62,23 @@ export async function wakeBackend(): Promise<HealthStatus | null> {
   }
 }
 
+/** Poll Render /health directly (not Vercel proxy). */
+export async function wakeBackendWithRetry(
+  attempts = 8,
+  intervalMs = 5_000,
+): Promise<HealthStatus | null> {
+  for (let i = 0; i < attempts; i++) {
+    const status = await wakeBackend();
+    if (status?.status === "ok" || status?.status === "degraded") {
+      return status;
+    }
+    if (i < attempts - 1) {
+      await delay(intervalMs);
+    }
+  }
+  return null;
+}
+
 function isRetryableExtractError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) return false;
   const status = error.response?.status;
@@ -86,7 +103,9 @@ export async function extractDocument(
 
   for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
     try {
-      await waitForBackendReady();
+      if (attempt > 1) {
+        await waitForBackendReady(60_000);
+      }
       const { data } = await api.post<ExtractionResponse>("/extract", formData);
       return data;
     } catch (error) {

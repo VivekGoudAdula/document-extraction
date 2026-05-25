@@ -10,12 +10,6 @@ export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL ?? PRODUCTION_BACKEND_URL
 ).replace(/\/+$/, "");
 
-const isLocalBackend =
-  API_BASE_URL.includes("localhost") || API_BASE_URL.includes("127.0.0.1");
-
-/** On Vercel + remote backend: same-origin proxy avoids CORS on health/wake. */
-export const HEALTH_API_PATH = isLocalBackend ? "/health" : "/api/health";
-
 export const ACCEPTED_FILE_TYPES = [
   "image/png",
   "image/jpeg",
