@@ -1,6 +1,7 @@
-/** Set on Vercel: NEXT_PUBLIC_API_URL = your Render backend URL */
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** Set on Vercel: NEXT_PUBLIC_API_URL = your Render backend URL (no trailing slash) */
+export const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+).replace(/\/+$/, "");
 
 export const ACCEPTED_FILE_TYPES = [
   "image/png",
