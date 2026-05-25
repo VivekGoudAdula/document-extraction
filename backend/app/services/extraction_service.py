@@ -52,8 +52,16 @@ class ExtractionService:
         paddle_ok = paddle_result.get("success", False)
         trocr_ok = trocr_result.get("success", False)
         if not paddle_ok and not trocr_ok:
+            paddle_err = (paddle_result.get("error") or "").strip()
+            trocr_err = (trocr_result.get("error") or "").strip()
+            if "requirements-render.txt" in paddle_err or "too heavy" in paddle_err:
+                raise DocumentExtractionError(
+                    f"Server OCR misconfigured: {paddle_err} "
+                    "Update Render build to: bash render-build.sh"
+                )
             raise DocumentExtractionError(
                 "Local OCR produced no usable text. Check image quality and try again."
+                + (f" ({paddle_err})" if paddle_err else "")
             )
 
         if not fusion_context.strip():

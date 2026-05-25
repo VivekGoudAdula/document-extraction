@@ -169,6 +169,14 @@ class PaddleOCRProvider(OCRProvider):
                 }
         except Exception as exc:
             logger.warning("PaddleOCR failed for %s: %s", file_path, exc)
+            return {
+                "provider": "paddleocr",
+                "execution_mode": EXECUTION_MODE,
+                "text": "",
+                "confidence": [],
+                "success": False,
+                "error": str(exc),
+            }
 
         return {
             "provider": "paddleocr",
@@ -176,7 +184,7 @@ class PaddleOCRProvider(OCRProvider):
             "text": "",
             "confidence": [],
             "success": False,
-            "error": "PaddleOCR produced no text or raised an error",
+            "error": "PaddleOCR produced no text",
         }
 
     async def extract_text(self, file_path: str | Path) -> OCRResult:

@@ -145,11 +145,23 @@ def create_app() -> FastAPI:
             ocr_engines.append("paddleocr")
         if settings.trocr_enabled:
             ocr_engines.append("trocr")
+        paddle_version = None
+        try:
+            import paddleocr as _po
+
+            paddle_version = _po.__version__
+        except Exception:
+            pass
+
         return {
             "status": "ok" if mongo_status == "connected" else "degraded",
             "pipeline": "opencv-" + "-".join(ocr_engines or ["none"]) + "-gpt4o",
             "ocr_execution_mode": "local",
             "ocr_engines": ocr_engines,
+            "paddleocr_version": paddle_version,
+            "paddleocr_ok_for_render": (
+                paddle_version.startswith("2.") if paddle_version else None
+            ),
             "low_memory_mode": settings.is_low_memory_deploy,
             "mongodb": mongo_status,
             "mongodb_error": mongodb_provider.last_error
@@ -158,7 +170,7 @@ def create_app() -> FastAPI:
             "cors_allowed_origins": settings.cors_origin_list,
         }
 
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     async def root():
         return {
             "service": "document-extraction-api",
