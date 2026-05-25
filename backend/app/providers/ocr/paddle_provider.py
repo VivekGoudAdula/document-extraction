@@ -34,26 +34,37 @@ def _create_paddle_ocr_v2():
 
 def _get_paddle_ocr():
     global _paddle_ocr
-    if _paddle_ocr is None:
-        from app.config import get_settings
+    if _paddle_ocr is not None:
+        return _paddle_ocr
 
-        settings = get_settings()
-        os.environ.setdefault("FLAGS_use_mkldnn", "0")
+    from app.config import get_settings
+
+    import paddleocr as paddleocr_pkg
+
+    settings = get_settings()
+    version = getattr(paddleocr_pkg, "__version__", "unknown")
+    os.environ.setdefault("FLAGS_use_mkldnn", "0")
+
+    if settings.is_low_memory_deploy:
+        if version.startswith("3."):
+            raise RuntimeError(
+                f"PaddleOCR {version} is too heavy for Render 512MB. "
+                "Set build command to: pip install -r requirements-render.txt"
+            )
+        logger.info("Loading PaddleOCR %s (cached after first load in this process)", version)
+        _paddle_ocr = _create_paddle_ocr_v2()
+    else:
         os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
         from paddleocr import PaddleOCR
 
-        if settings.is_low_memory_deploy:
-            # PaddleOCR 2.x on Render — only kwargs supported by 2.7.x.
-            logger.info("Initializing PaddleOCR 2.x (low-memory profile)")
-            _paddle_ocr = _create_paddle_ocr_v2()
-        else:
-            try:
-                _paddle_ocr = PaddleOCR(
-                    lang="en",
-                    use_textline_orientation=True,
-                )
-            except TypeError:
-                _paddle_ocr = PaddleOCR(lang="en")
+        logger.info("Loading PaddleOCR %s (full profile)", version)
+        try:
+            _paddle_ocr = PaddleOCR(
+                lang="en",
+                use_textline_orientation=True,
+            )
+        except TypeError:
+            _paddle_ocr = PaddleOCR(lang="en")
     return _paddle_ocr
 
 

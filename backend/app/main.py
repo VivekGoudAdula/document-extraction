@@ -158,6 +158,14 @@ def create_app() -> FastAPI:
             "cors_allowed_origins": settings.cors_origin_list,
         }
 
+    @app.get("/")
+    async def root():
+        return {
+            "service": "document-extraction-api",
+            "health": "/health",
+            "extract": "POST /extract",
+        }
+
     app.include_router(api_router)
     return app
 

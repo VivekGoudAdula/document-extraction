@@ -3,9 +3,12 @@ import axios, { AxiosError } from "axios";
 import { API_BASE_URL } from "@/lib/constants";
 import type { ExtractionResponse } from "@/types/extraction";
 
+/** First /extract on Render may load OCR; allow up to 5 minutes. */
+const EXTRACT_TIMEOUT_MS = 300_000;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 120000,
+  timeout: EXTRACT_TIMEOUT_MS,
 });
 
 export async function extractDocument(
@@ -44,6 +47,12 @@ export function getApiErrorMessage(error: unknown): string {
     }
 
     if (typeof data?.error === "string") return data.error;
+    if (axiosError.code === "ECONNABORTED") {
+      return (
+        "Request timed out. The server may still be loading OCR models on first run — " +
+        "wait a minute and try again, or check Render logs."
+      );
+    }
     if (axiosError.message) return axiosError.message;
   }
 
