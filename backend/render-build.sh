@@ -10,20 +10,35 @@ pip install --upgrade pip
 
 echo "=== Clean conflicting packages ==="
 pip uninstall -y paddleocr paddlex paddlepaddle \
-  opencv-python opencv-contrib-python 2>/dev/null || true
+  opencv-python opencv-contrib-python opencv-python-headless 2>/dev/null || true
 
-echo "=== Install app dependencies (NumPy 1.x constrained) ==="
+echo "=== Pin NumPy 1.x first (required by PaddlePaddle) ==="
+pip install "numpy>=1.24.0,<2.0.0" --no-cache-dir
+
+echo "=== Install app deps (constraints keep NumPy 1.x) ==="
 pip install -r "${ROOT}/requirements-render.txt" -c "${CONSTRAINTS}" --no-cache-dir
 
-echo "=== Ensure single OpenCV headless + NumPy 1.x ==="
+echo "=== Drop GUI OpenCV wheels; keep headless only ==="
 pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null || true
-pip install "numpy>=1.24.0,<2.0.0" --no-cache-dir --force-reinstall
-pip install opencv-python-headless==4.6.0.66 --no-cache-dir --force-reinstall
 
-echo "=== Verify (build fails if cv2 missing) ==="
-python -c "import numpy; assert numpy.__version__.startswith('1.'), numpy.__version__"
-python -c "import cv2; print('cv2 OK', cv2.__version__)"
-python -c "import paddleocr; v=paddleocr.__version__; print('paddleocr', v); assert v.startswith('2.7.')"
+echo "=== Install headless OpenCV WITHOUT deps (never upgrade NumPy) ==="
+pip install opencv-python-headless==4.6.0.66 --no-deps --no-cache-dir --force-reinstall
+
+echo "=== Force NumPy 1.x again if anything pulled 2.x ==="
+pip install "numpy>=1.24.0,<2.0.0" --no-cache-dir --force-reinstall
+
+echo "=== Verify (build fails on mismatch) ==="
+python <<'PY'
+import numpy
+import cv2
+import paddleocr
+
+assert numpy.__version__.startswith("1."), f"numpy must be 1.x, got {numpy.__version__}"
+assert paddleocr.__version__.startswith("2.7."), paddleocr.__version__
+print("numpy", numpy.__version__)
+print("cv2", cv2.__version__)
+print("paddleocr", paddleocr.__version__)
+PY
 
 echo "=== Optional model cache ==="
 python "${ROOT}/scripts/cache_paddle_models.py" || echo "WARN: model pre-cache skipped"
