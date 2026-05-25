@@ -146,6 +146,13 @@ def create_app() -> FastAPI:
         if settings.trocr_enabled:
             ocr_engines.append("trocr")
         paddle_version = None
+        numpy_version = None
+        try:
+            import numpy as _np
+
+            numpy_version = _np.__version__
+        except Exception:
+            pass
         try:
             import paddleocr as _po
 
@@ -159,8 +166,12 @@ def create_app() -> FastAPI:
             "ocr_execution_mode": "local",
             "ocr_engines": ocr_engines,
             "paddleocr_version": paddle_version,
+            "numpy_version": numpy_version,
             "paddleocr_ok_for_render": (
                 paddle_version.startswith("2.") if paddle_version else None
+            ),
+            "numpy_ok_for_paddle": (
+                numpy_version.startswith("1.") if numpy_version else None
             ),
             "low_memory_mode": settings.is_low_memory_deploy,
             "mongodb": mongo_status,
