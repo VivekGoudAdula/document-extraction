@@ -120,6 +120,18 @@ class Settings(BaseSettings):
         # Browsers reject Access-Control-Allow-Origin: * with credentials.
         return bool(self.cors_origin_list)
 
+    def is_origin_allowed(self, origin: str | None) -> bool:
+        if not origin:
+            return False
+        normalized = origin.strip().rstrip("/")
+        if normalized in self.cors_origin_list:
+            return True
+        # Vercel preview deployments (*.vercel.app) when production URL is on Vercel.
+        if self.frontend_url and "vercel.app" in self.frontend_url:
+            if normalized.endswith(".vercel.app"):
+                return True
+        return False
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.config import UPLOADS_DIR, get_settings
 from app.providers.mongodb_provider import mongodb_provider
@@ -89,6 +89,31 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def ensure_cors_headers(request: Request, call_next):
+        """Guarantee CORS headers on every response (including 4xx/5xx)."""
+        origin = request.headers.get("origin")
+        settings_ref = get_settings()
+
+        if request.method == "OPTIONS" and origin:
+            if settings_ref.is_origin_allowed(origin):
+                return Response(
+                    status_code=204,
+                    headers={
+                        "Access-Control-Allow-Origin": origin,
+                        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                        "Access-Control-Allow-Headers": "*",
+                        "Access-Control-Max-Age": "86400",
+                    },
+                )
+
+        response = await call_next(request)
+        if origin and settings_ref.is_origin_allowed(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
 
     @app.exception_handler(AppException)
     async def app_exception_handler(_: Request, exc: AppException):

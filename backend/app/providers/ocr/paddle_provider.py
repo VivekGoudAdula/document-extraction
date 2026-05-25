@@ -21,6 +21,17 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 _paddle_ocr = None
 
 
+def _create_paddle_ocr_v2():
+    from paddleocr import PaddleOCR
+
+    for kwargs in ({"lang": "en", "use_angle_cls": False}, {"lang": "en"}):
+        try:
+            return PaddleOCR(**kwargs)
+        except Exception as exc:
+            logger.debug("PaddleOCR init %s: %s", kwargs, exc)
+    return PaddleOCR(lang="en")
+
+
 def _get_paddle_ocr():
     global _paddle_ocr
     if _paddle_ocr is None:
@@ -32,16 +43,9 @@ def _get_paddle_ocr():
         from paddleocr import PaddleOCR
 
         if settings.is_low_memory_deploy:
-            # PaddleOCR 2.x on Render: minimal flags, CPU only, no extra classifiers.
+            # PaddleOCR 2.x on Render — only kwargs supported by 2.7.x.
             logger.info("Initializing PaddleOCR 2.x (low-memory profile)")
-            try:
-                _paddle_ocr = PaddleOCR(
-                    lang="en",
-                    use_angle_cls=False,
-                    show_log=False,
-                )
-            except TypeError:
-                _paddle_ocr = PaddleOCR(lang="en")
+            _paddle_ocr = _create_paddle_ocr_v2()
         else:
             try:
                 _paddle_ocr = PaddleOCR(
@@ -137,7 +141,10 @@ class PaddleOCRProvider(OCRProvider):
                 raw = ocr.predict(str(file_path))
                 full_text, confidence_entries = _parse_paddle_v3(list(raw))
             else:
-                raw = ocr.ocr(str(file_path), cls=True)
+                from app.config import get_settings
+
+                use_cls = not get_settings().is_low_memory_deploy
+                raw = ocr.ocr(str(file_path), cls=use_cls)
                 full_text, confidence_entries = _parse_paddle_v2(raw)
 
             if full_text:
