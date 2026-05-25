@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 
-import { API_BASE_URL } from "@/lib/constants";
+import { API_BASE_URL, HEALTH_CHECK_URL } from "@/lib/constants";
 import type { ExtractionResponse } from "@/types/extraction";
 
 /** First /extract on Render may load OCR models; allow up to 10 minutes. */
@@ -17,7 +17,7 @@ const api = axios.create({
 });
 
 const healthApi = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: HEALTH_CHECK_URL.startsWith("/") ? "" : API_BASE_URL,
   timeout: HEALTH_TIMEOUT_MS,
 });
 
@@ -26,10 +26,14 @@ export type HealthStatus = {
   mongodb?: string;
   paddle_models_cached?: boolean;
   paddleocr_loaded?: boolean;
+  detail?: string;
 };
 
 export async function fetchHealth(): Promise<HealthStatus> {
-  const { data } = await healthApi.get<HealthStatus>("/health");
+  const path = HEALTH_CHECK_URL.startsWith("/")
+    ? HEALTH_CHECK_URL
+    : "/health";
+  const { data } = await healthApi.get<HealthStatus>(path);
   return data;
 }
 
@@ -158,8 +162,9 @@ export function getApiErrorMessage(error: unknown): string {
     }
     if (!axiosError.response) {
       return (
-        "Cannot reach the API. If the browser shows CORS, the backend likely returned 502 " +
-        "after a crash — wait for Render to finish starting, then retry."
+        "Cannot reach the API (often 502 while Render is starting or restarting). " +
+        "Wait until the page shows “API ready”, then try one upload. " +
+        "A CORS message in the console usually means the backend did not respond."
       );
     }
     if (axiosError.message) return axiosError.message;

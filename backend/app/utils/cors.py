@@ -4,6 +4,7 @@ from fastapi import Request
 from starlette.responses import Response
 
 from app.config import get_settings
+from app.deploy_urls import PRODUCTION_FRONTEND_URL
 
 
 def cors_headers_for_request(request: Request) -> dict[str, str]:
@@ -13,7 +14,9 @@ def cors_headers_for_request(request: Request) -> dict[str, str]:
         return {}
 
     normalized = origin.strip().rstrip("/")
-    if settings.is_origin_allowed(normalized):
+    if normalized == PRODUCTION_FRONTEND_URL.rstrip("/") or settings.is_origin_allowed(
+        normalized
+    ):
         headers = {
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",

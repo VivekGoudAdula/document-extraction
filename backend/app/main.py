@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app.config import UPLOADS_DIR, get_settings
+from app.deploy_urls import PRODUCTION_FRONTEND_URL
 from app.providers.mongodb_provider import mongodb_provider
 from app.routes import api_router
 from app.utils.cors import apply_cors_to_response, cors_headers_for_request
@@ -79,24 +80,21 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    cors_origins = settings.cors_origin_list
-    cors_kwargs: dict = {
-        "allow_methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["*"],
-        "expose_headers": ["*"],
-    }
-    if settings.is_low_memory_deploy:
-        cors_kwargs["allow_origin_regex"] = r"https://([a-z0-9-]+\.)*vercel\.app"
-        cors_kwargs["allow_origins"] = cors_origins or []
-        cors_kwargs["allow_credentials"] = True
-    elif cors_origins:
-        cors_kwargs["allow_origins"] = cors_origins
-        cors_kwargs["allow_credentials"] = settings.cors_allow_credentials
-    else:
-        cors_kwargs["allow_origins"] = ["*"]
-        cors_kwargs["allow_credentials"] = False
+    cors_origins = list(
+        dict.fromkeys(
+            [PRODUCTION_FRONTEND_URL.rstrip("/"), *settings.cors_origin_list]
+        )
+    )
 
-    app.add_middleware(CORSMiddleware, **cors_kwargs)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_origin_regex=r"https://([a-z0-9-]+\.)*vercel\.app",
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
 
     @app.middleware("http")
     async def ensure_cors_headers(request: Request, call_next):
