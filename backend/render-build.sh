@@ -1,19 +1,34 @@
 #!/usr/bin/env bash
-# Render MUST use this script (or equivalent). Do NOT use requirements.txt on 512MB plans.
+# Render build — run from backend/ as: bash render-build.sh
 set -euo pipefail
+
+export FLAGS_use_mkldnn=0
 
 pip install --upgrade pip
 
-echo "Removing PaddleOCR 3.x if present..."
-pip uninstall -y paddleocr paddlex paddlepaddle 2>/dev/null || true
+echo "=== Remove PaddleOCR 3.x / duplicate OpenCV if present ==="
+pip uninstall -y paddleocr paddlex paddlepaddle opencv-python opencv-contrib-python 2>/dev/null || true
 
-echo "Installing PaddleOCR 2.7.3 + PaddlePaddle 2.6.2..."
+echo "=== Install Render stack (PaddleOCR 2.7.3) ==="
 pip install -r requirements-render.txt --no-cache-dir
 
-python scripts/cache_paddle_models.py
+echo "=== Keep only one OpenCV (headless) ==="
+pip uninstall -y opencv-python opencv-contrib-python 2>/dev/null || true
+pip install opencv-python-headless==4.6.0.66 --no-cache-dir
 
-python -c "import paddleocr; print('Installed paddleocr', paddleocr.__version__)"
-test "$(python -c 'import paddleocr; print(paddleocr.__version__)')" = "2.7.3" || {
-  echo "FATAL: expected paddleocr 2.7.3"
-  exit 1
-}
+echo "=== Verify paddleocr version ==="
+python -c "
+import paddleocr
+v = paddleocr.__version__
+print('paddleocr version:', v)
+assert v.startswith('2.'), f'Expected 2.x, got {v}'
+"
+
+echo "=== Optional model cache (non-fatal — segfault on some hosts) ==="
+if python scripts/cache_paddle_models.py; then
+  echo "OCR models pre-cached at build time."
+else
+  echo "WARN: Model pre-cache skipped; models load on first /extract request."
+fi
+
+echo "=== Build OK ==="

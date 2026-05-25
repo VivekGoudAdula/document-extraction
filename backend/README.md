@@ -77,8 +77,9 @@ app/services/        — preprocessing, fusion, extraction, ocr_pipeline
 2. **Python version:** `3.11.11` (set in Dashboard → Environment → `PYTHON_VERSION`, or use `runtime.txt` in this folder)
 3. **Build (512MB Render) — required, NOT requirements.txt:**
    ```bash
-   pip install --upgrade pip && pip install -r requirements-render.txt && python scripts/cache_paddle_models.py
+   bash render-build.sh
    ```
+   (Model pre-cache is optional; build succeeds even if cache step segfaults.)
    If logs show `PP-OCRv5_server_det` or `UVDoc`, you are on PaddleOCR 3.x (wrong file) — fix the build command.
 4. **Build (local / GPU server):** `pip install -r requirements.txt`
 5. **Start:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`

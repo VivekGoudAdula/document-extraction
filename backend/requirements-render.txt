@@ -1,15 +1,19 @@
-# Render 512MB–1GB: PaddleOCR 2.x (lighter than 3.x / PaddleX). No PyTorch/TrOCR.
-# Python 3.11 — see runtime.txt
+# Render 512MB — PaddleOCR 2.7 only. Python 3.11 (runtime.txt).
+# Do NOT use requirements.txt on Render (installs PaddleOCR 3.x + PyTorch).
+
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 aiofiles>=24.1.0
-Pillow>=11.0.0
-opencv-python-headless>=4.10.0
+Pillow>=11.0.0,<13
 openai>=1.55.0
 motor>=3.6.0
 pydantic-settings>=2.6.0
 python-dotenv>=1.0.1
 pymongo>=4.9.0
-paddleocr==2.7.3
+
+# Pin OpenCV before Paddle — single headless build (avoids segfaults from mixed cv2).
+opencv-python-headless==4.6.0.66
+
 paddlepaddle==2.6.2
+paddleocr==2.7.3
