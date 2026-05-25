@@ -1,18 +1,20 @@
+# Render/production: Python 3.11 required (see runtime.txt). PaddlePaddle has no wheels for 3.14+.
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
 aiofiles>=24.1.0
 Pillow>=11.0.0
-opencv-python>=4.10.0
+opencv-python-headless>=4.10.0
 openai>=1.55.0
 motor>=3.6.0
 pydantic-settings>=2.6.0
 python-dotenv>=1.0.1
 pymongo>=4.9.0
-paddleocr>=2.7.0
-paddlepaddle>=2.6.0
-transformers>=4.40.0
-torch>=2.2.0
-torchvision>=0.17.0
+paddleocr>=2.7.0,<3.6.0
+paddlepaddle>=2.6.2,<3.2.0
+transformers>=4.40.0,<5.0.0
 accelerate>=0.30.0
-easyocr>=1.7.0
+# CPU-only PyTorch (smaller install for cloud Linux hosts without GPU)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.2.0,<2.7.0
+torchvision>=0.17.0,<0.22.0

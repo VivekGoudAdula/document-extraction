@@ -71,6 +71,16 @@ app/providers/llm/   — base (future local LLMs), openai_provider
 app/services/        — preprocessing, fusion, extraction, ocr_pipeline
 ```
 
+## Deploy on Render
+
+1. **Root Directory:** `backend`
+2. **Python version:** `3.11.11` (set in Dashboard → Environment → `PYTHON_VERSION`, or use `runtime.txt` in this folder)
+3. **Build:** `pip install --upgrade pip && pip install -r requirements.txt`
+4. **Start:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+5. Add env vars from `.env.example` (OpenAI, MongoDB, `CORS_ORIGINS` = your Vercel URL)
+
+Do **not** use Python 3.14 — PaddlePaddle has no wheels for it.
+
 ## Not used (by design)
 
 Azure OCR, Google Vision, AWS Textract, HuggingFace Inference API.
